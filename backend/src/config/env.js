@@ -15,5 +15,12 @@ export const env = Object.freeze({
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   databaseUrl: process.env.DATABASE_URL || '',
   dbSsl: process.env.DB_SSL === 'true',
-  dbPoolMax: integerSetting('DB_POOL_MAX', 10, 1, 100)
+  dbPoolMax: integerSetting('DB_POOL_MAX', 10, 1, 100),
+  jwtSecret: process.env.JWT_SECRET || '',
+  cookieSameSite: process.env.COOKIE_SAME_SITE || 'lax',
+  shortUrlOrigin: process.env.SHORT_URL_ORIGIN || `http://localhost:${process.env.PORT || 3000}`
 });
+
+if (!['lax', 'strict', 'none'].includes(env.cookieSameSite)) {
+  throw new Error('COOKIE_SAME_SITE must be lax, strict, or none');
+}

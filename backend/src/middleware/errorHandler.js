@@ -16,7 +16,7 @@ export function errorHandler(error, _req, res, _next) {
     : error.status === 400 || error.type === 'entity.parse.failed' ? 400 : 500;
   if (status >= 500) console.error('API error:', error);
   res.status(status).json({
-    message: status === 500 ? 'Internal server error' : error.message,
-    ...(process.env.NODE_ENV !== 'production' && status >= 500 ? { detail: error.message } : {})
+    message: status >= 500 ? 'Internal server error' : error.message
+
   });
 }
