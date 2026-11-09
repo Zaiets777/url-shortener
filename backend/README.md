@@ -1,6 +1,6 @@
 # URL Shortener — Backend
 
-This folder implements **Issues #6, #7, #8 (authentication)** and **#9 (short links)**.
+This folder implements **Issues #6, #7, #8 (authentication), #9 (short links) and #15 (custom aliases)**.
 The repository's existing frontend is unchanged.
 
 ## Requirements
@@ -46,7 +46,7 @@ The server validates the connection at startup and stops on DB failure. To run a
 
 **Users**: UUID `id`, `username` (unique, case-insensitive), `password_hash` (bcrypt hash), `created_at`, `updated_at`.
 
-**Links**: UUID `id`, owner `user_id`, unique `short_code` (6–8 chars), `original_url`, `created_at`, `expires_at`, `click_count` (default 0).
+**Links**: UUID `id`, owner `user_id`, unique `short_code` (3–32 chars for custom aliases; generated codes remain 8 chars), `original_url`, `created_at`, `expires_at`, `click_count` (default 0).
 A link is active when `expires_at > NOW()`; expired status is derived, not stored.
 
 The models in `src/models/User.js` and `src/models/Link.js` now support authentication and link operations. See Issues #8 and #9 below.
@@ -84,7 +84,7 @@ Never commit `.env` or a real `JWT_SECRET`.
 | GET | `/api/v1/auth/me` | Cookie | Current user |
 | POST | `/api/v1/auth/logout` | Public | Clears cookie |
 | GET | `/api/v1/links?active=true` | Cookie | Own active links (`?active=true` optional) |
-| POST | `/api/v1/links` | Cookie | `{ "originalUrl": "https://example.com", "expiresInDays": 7 }` |
+| POST | `/api/v1/links` | Cookie | `{ "originalUrl": "https://example.com", "expiresInDays": 7, "customAlias": "my-link" } (`customAlias` optional)` |
 | GET | `/api/v1/links/:shortCode` | Cookie | Statistics for own link |
 | PATCH | `/api/v1/links/:id` | Cookie | Update destination/expiry |
 | DELETE | `/api/v1/links/:id` | Cookie | Delete own link |
@@ -125,3 +125,20 @@ set `VITE_SHORT_URL_ORIGIN=http://localhost:3000` when running locally.
 **Scope note:** the Stats UI supports an optional `visits` series, but the current
 schema stores only the total counter. Per-day visit charts require a separate
 `link_visits` table and a later feature. The current UI shows the total counter.
+
+### Custom aliases (Issue #15)
+
+`POST /api/v1/links` (requires an auth cookie) accepts optional `customAlias`.
+Example request:
+
+```json
+{ "originalUrl": "https://example.com", "expiresInDays": 7, "customAlias": "my-link" }
+```
+
+- With an alias: response `201` contains `link.shortCode: "my-link"` and a matching `link.shortUrl`.
+- Without an alias: existing random code generation is used.
+- Alias must contain **3–32** ASCII letters, numbers, hyphens or underscores; case-sensitive. Other values return `400`.
+- Alias already in use: `409 Conflict` with `{ "message": "This custom alias is already taken" }`. Uniqueness is global across all users; an expired alias is still reserved until removed.
+- The public redirect supports the longer custom codes.
+
+**Neon migration:** run `npm run db:init` with your production `DATABASE_URL` once after deployment (or run `backend/sql/002_custom_alias.sql` in the Neon SQL Editor). The migration preserves existing rows and the unique constraint. Never commit `.env` or paste DB credentials into GitHub.
