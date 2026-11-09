@@ -34,7 +34,7 @@ export function createApp({ dbCheck = checkDatabaseConnection } = {}) {
   // Public short URL redirect: never cache so each visit increments the counter.
   app.get('/:shortCode', async (req, res, next) => {
     try {
-      if (!/^[A-Za-z0-9_-]{6,8}$/.test(req.params.shortCode)) return next();
+      if (!/^[A-Za-z0-9_-]{3,32}$/.test(req.params.shortCode)) return next();
       const destination = await Link.resolveAndCount(req.params.shortCode);
       if (!destination) return res.status(404).json({ message: 'Short link not found or expired' });
       res.set('Cache-Control', 'no-store');

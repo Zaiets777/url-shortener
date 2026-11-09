@@ -2,11 +2,16 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { getPool, closeDatabaseConnection } from '../src/config/database.js';
 
-const schemaFile = fileURLToPath(new URL('../sql/001_initial_schema.sql', import.meta.url));
+const schemaFiles = [
+  '../sql/001_initial_schema.sql',
+  '../sql/002_custom_alias.sql'
+].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 try {
-  const sql = await readFile(schemaFile, 'utf8');
-  await getPool().query(sql);
-  console.log('Schema applied: users and links tables are ready');
+  for (const file of schemaFiles) {
+    const sql = await readFile(file, 'utf8');
+    await getPool().query(sql);
+  }
+  console.log('Schema and custom alias migration applied successfully');
 } catch (error) {
   console.error('Failed to initialize database:', error.message);
   process.exitCode = 1;

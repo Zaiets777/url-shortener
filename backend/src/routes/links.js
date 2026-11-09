@@ -7,7 +7,8 @@ import { env } from '../config/env.js';
 
 export const linksRouter = Router();
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
-const CODE_PATTERN = /^[A-Za-z0-9_-]{6,8}$/;
+const CODE_PATTERN = /^[A-Za-z0-9_-]{3,32}$/;
+const ALIAS_PATTERN = /^[A-Za-z0-9_-]{3,32}$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function validateUrl(input) {
@@ -41,21 +42,51 @@ linksRouter.get('/', asyncHandler(async (req, res) => {
   res.json({ links: links.map(outputLink) });
 }));
 
-linksRouter.post('/', asyncHandler(async (req, res) => {
-  const url = validateUrl(req.body?.originalUrl);
-  const days = req.body?.expiresInDays ?? 7;
-  if (!Number.isInteger(days) || days < 1 || days > 365) throw new AppError(400, 'expiresInDays must be between 1 and 365');
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const code = randomBytes(6).toString('base64url').slice(0, 8);
+export function validateCustomAlias(customAlias) {
+  if (customAlias === undefined) return undefined;
+  if (typeof customAlias !== 'string' || !ALIAS_PATTERN.test(customAlias)) {
+    throw new AppError(400, 'customAlias must be 3–32 characters: letters, numbers, hyphens or underscores');
+  }
+  return customAlias;
+}
+
+// Return 409 on duplicate aliases, including concurrent insert races.
+export async function createLinkWithAlias({ userId, originalUrl, expiresInDays, customAlias, model = Link, generateCode = () => randomBytes(6).toString('base64url').slice(0, 8) }) {
+  const alias = validateCustomAlias(customAlias);
+  if (alias !== undefined) {
+    if (await model.findByShortCode(alias)) throw new AppError(409, 'This custom alias is already taken');
     try {
-      const link = await Link.create({ userId: req.user.id, shortCode: code, originalUrl: url, expiresInDays: days });
-      return res.status(201).json({ link: outputLink(link) });
+      return await model.create({ userId, shortCode: alias, originalUrl, expiresInDays });
+    } catch (error) {
+      if (error.code === '23505' && error.constraint === 'links_short_code_key') {
+        throw new AppError(409, 'This custom alias is already taken');
+      }
+      throw error;
+    }
+  }
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      return await model.create({ userId, shortCode: generateCode(), originalUrl, expiresInDays });
     } catch (error) {
       if (error.code === '23505' && error.constraint === 'links_short_code_key') continue;
       throw error;
     }
   }
   throw new AppError(503, 'Could not generate a unique link; please retry');
+}
+
+linksRouter.post('/', asyncHandler(async (req, res) => {
+  const url = validateUrl(req.body?.originalUrl);
+  const days = req.body?.expiresInDays ?? 7;
+  if (!Number.isInteger(days) || days < 1 || days > 365) throw new AppError(400, 'expiresInDays must be between 1 and 365');
+  const link = await createLinkWithAlias({
+    userId: req.user.id,
+    originalUrl: url,
+    expiresInDays: days,
+    customAlias: req.body?.customAlias
+  });
+  res.status(201).json({ link: outputLink(link) });
 }));
 
 linksRouter.get('/:shortCode', asyncHandler(async (req, res) => {
