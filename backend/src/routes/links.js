@@ -89,6 +89,22 @@ linksRouter.post('/', asyncHandler(async (req, res) => {
   res.status(201).json({ link: outputLink(link) });
 }));
 
+// Issue #20: daily click history for the last 7 (default) or 30 UTC days.
+// Defined ahead of /:shortCode so "stats" cannot be confused with a short code.
+export function parseStatsDays(raw) {
+  if (raw === undefined || raw === '7') return 7;
+  if (raw === '30') return 30;
+  throw new AppError(400, 'days must be 7 or 30');
+}
+
+linksRouter.get('/:id/stats', asyncHandler(async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) throw new AppError(400, 'Invalid link ID');
+  const days = parseStatsDays(req.query.days);
+  const link = await Link.findOwnedById(req.user.id, req.params.id);
+  if (!link) throw new AppError(404, 'Link not found');
+  res.json(await Link.getDailyStats(req.user.id, req.params.id, days));
+}));
+
 linksRouter.get('/:shortCode', asyncHandler(async (req, res) => {
   if (!CODE_PATTERN.test(req.params.shortCode)) throw new AppError(400, 'Invalid short code');
   const link = await Link.findOwnedByCode(req.user.id, req.params.shortCode);
