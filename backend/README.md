@@ -1,6 +1,6 @@
 # URL Shortener — Backend
 
-This folder implements **Issues #6, #7, #8 (authentication), #9 (short links) and #15 (custom aliases)**.
+This folder implements **Issues #6, #7, #8 (authentication), #9 (short links) , #15 (custom aliases) and #20 (daily click statistics)**.
 The repository's existing frontend is unchanged.
 
 ## Requirements
@@ -142,3 +142,58 @@ Example request:
 - The public redirect supports the longer custom codes.
 
 **Neon migration:** run `npm run db:init` with your production `DATABASE_URL` once after deployment (or run `backend/sql/002_custom_alias.sql` in the Neon SQL Editor). The migration preserves existing rows and the unique constraint. Never commit `.env` or paste DB credentials into GitHub.
+
+
+### Daily click history (Issue #20)
+
+Run `backend/sql/003_daily_clicks.sql` once in **Neon → SQL Editor** (database and
+branch must match the Render `DATABASE_URL`). The migration adds `link_clicks`
+with `link_id` referencing `links(id)` and `clicked_at TIMESTAMPTZ`, plus an index.
+It is safe to repeat. Alternatively `npm run db:init` now includes the migration.
+
+**Important:** Existing `links.click_count` totals are preserved. Historical
+click dates from before the migration were never stored and cannot be reconstructed.
+The graph initially shows only clicks recorded after this migration.
+
+When a visitor follows a valid, unexpired `GET /:shortCode`, Express records
+`clicked_at` and increments `click_count` in **one PostgreSQL transaction**;
+if either write fails, neither is committed and the redirect fails rather than
+returning untracked clicks. Expired/unknown links do not create events.
+
+**Authenticated** route (requires the normal `url_shortener_session` cookie):
+
+`GET /api/v1/links/:id/stats?days=7` (or `days=30`)
+
+- `:id` is the UUID of the link (not its shortCode).
+- `days` defaults to `7`; accepts only `7` or `30`; otherwise HTTP **400**.
+- Only the link owner can access stats; unknown/other-user link returns **404**.
+- Returns an array in UTC calendar days, **oldest first**, including today and
+  zero-click days:
+
+```json
+[
+  { "date": "2026-11-08", "clicks": 5 },
+  { "date": "2026-11-09", "clicks": 12 }
+]
+```
+
+Those two rows are *illustrative*: real responses contain exactly 7 or 30 days,
+including dates with zero clicks. `clicks` values are numbers.
+
+Example after logging in with `curl -c cookies.txt`:
+
+```bash
+curl -b cookies.txt 'http://localhost:3000/api/v1/links/YOUR_LINK_UUID/stats?days=7'
+```
+
+To verify in Neon SQL Editor:
+
+```sql
+SELECT (clicked_at AT TIME ZONE 'UTC')::date AS day, count(*) AS clicks
+FROM link_clicks
+GROUP BY day ORDER BY day DESC;
+```
+
+**Frontend note:** the new route is API-only. A client chart must explicitly
+request `/api/v1/links/:id/stats` and map the returned array; the existing
+frontend has not been modified by Issue #20.
