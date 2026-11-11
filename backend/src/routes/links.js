@@ -97,12 +97,18 @@ export function parseStatsDays(raw) {
   throw new AppError(400, 'days must be 7 or 30');
 }
 
+// Accept either the UUID or shortCode; missing/other-user links always return 404.
 linksRouter.get('/:id/stats', asyncHandler(async (req, res) => {
-  if (!uuidPattern.test(req.params.id)) throw new AppError(400, 'Invalid link ID');
+  const identifier = req.params.id;
   const days = parseStatsDays(req.query.days);
-  const link = await Link.findOwnedById(req.user.id, req.params.id);
+  const link = uuidPattern.test(identifier)
+    ? await Link.findOwnedById(req.user.id, identifier)
+    : CODE_PATTERN.test(identifier)
+      ? await Link.findOwnedByCode(req.user.id, identifier)
+      : null;
   if (!link) throw new AppError(404, 'Link not found');
-  res.json(await Link.getDailyStats(req.user.id, req.params.id, days));
+  res.set('Cache-Control', 'no-store');
+  res.json(await Link.getDailyStats(req.user.id, link.id, days));
 }));
 
 linksRouter.get('/:shortCode', asyncHandler(async (req, res) => {
