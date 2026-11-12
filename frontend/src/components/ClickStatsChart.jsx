@@ -41,7 +41,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-export default function ClickStatsChart({ data = mockData }) {
+export default function ClickStatsChart({ data }) {
   return (
     <div style={{ width: '100%', height: '300px', marginTop: '20px' }}>
       <ResponsiveContainer width="100%" height="100%">
