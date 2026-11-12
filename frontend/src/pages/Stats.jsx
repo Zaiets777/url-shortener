@@ -138,8 +138,7 @@ export default function Stats() {
               <span className="period-tag">Last 7 days</span>
             </div>
             
-            {/* Виводимо наш новий графік. Поки бекенд не готовий, він сам підтягне тестові дані */}
-            <ClickStatsChart />
+           <ClickStatsChart data={link.visits || []} />
             
           </section>
         </>
