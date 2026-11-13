@@ -30,7 +30,7 @@ const SHORT_URL_ORIGIN = normalizeOrigin(
 async function request(path, { method = 'GET', body } = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     method,
-    credentials: 'include',
+    credentials: 'include', // Дозволяє браузеру приймати та відправляти httpOnly cookie
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined
   });
