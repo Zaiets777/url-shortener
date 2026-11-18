@@ -1,4 +1,7 @@
 import { getPool } from '../config/database.js';
+import { createTtlCache } from '../utils/ttlCache.js';
+
+export const redirectCache = createTtlCache();
 
 const COLUMNS = 'id, user_id, short_code, original_url, click_count, created_at, expires_at';
 export const Link = {
@@ -49,32 +52,43 @@ export const Link = {
     );
     return rows[0] ?? null;
   },
-  // An accepted redirect updates the total and inserts its timestamp in one transaction.
-  // Row locking prevents concurrent clicks from losing counter increments.
-  async resolveAndCount(shortCode, pool = getPool()) {
+  // Server-side cache stores shortCode -> link ID, NEVER a 302 response.
+  // Each real GET still performs an atomic DB transaction and records one click.
+  // Database UPDATE returns the CURRENT destination/expiry, so cached IDs cannot
+  // expose an outdated URL or bypass deleted/expired link checks.
+  async resolveAndCount(shortCode, pool = getPool(), cache = redirectCache) {
     const client = await pool.connect();
+    let selected = null;
     try {
       await client.query('BEGIN');
-      const { rows } = await client.query(
-        `SELECT id, original_url FROM links
-         WHERE short_code = $1 AND expires_at > NOW() FOR UPDATE`,
-        [shortCode]
-      );
-      const link = rows[0];
-      if (!link) {
-        await client.query('ROLLBACK');
-        return null;
+      const cachedId = cache.get(shortCode);
+      if (cachedId) {
+        const { rows } = await client.query(
+          `UPDATE links SET click_count = click_count + 1
+           WHERE id = $1 AND short_code = $2 AND expires_at > NOW()
+           RETURNING id, original_url`,
+          [cachedId, shortCode]
+        );
+        selected = rows[0] ?? null;
+        if (!selected) cache.delete(shortCode);
       }
-      await client.query(
-        'INSERT INTO link_clicks (link_id, clicked_at) VALUES ($1, NOW())',
-        [link.id]
-      );
-      await client.query(
-        'UPDATE links SET click_count = click_count + 1 WHERE id = $1',
-        [link.id]
-      );
+      if (!selected) {
+        const { rows } = await client.query(
+          `SELECT id, original_url FROM links
+           WHERE short_code = $1 AND expires_at > NOW() FOR UPDATE`,
+          [shortCode]
+        );
+        selected = rows[0] ?? null;
+        if (!selected) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+        await client.query('UPDATE links SET click_count = click_count + 1 WHERE id = $1', [selected.id]);
+      }
+      await client.query('INSERT INTO link_clicks (link_id, clicked_at) VALUES ($1, NOW())', [selected.id]);
       await client.query('COMMIT');
-      return link.original_url;
+      cache.set(shortCode, selected.id);
+      return selected.original_url;
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch (rollbackError) {
         console.error('Click transaction rollback failed:', rollbackError);

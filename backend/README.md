@@ -315,3 +315,22 @@ GROUP BY l.id, l.short_code, l.click_count;
 For links created before the `link_clicks` migration, `click_count` may be higher than `recorded_events` because historical timestamps were not stored.
 
 **No new SQL migration is required for Issues #23/#24** if `link_clicks` from Issue #20 already exists.
+
+
+## Issue #26: Cookie authentication and OpenAPI
+
+- `POST /api/v1/auth/login` sets a signed JWT **only** in a `url_shortener_session` **httpOnly** cookie; the response JSON contains only `user`, never a token.
+- `GET /api/v1/auth/me` and all protected links routes read the cookie from `req.cookies`; `Authorization: Bearer` headers are not used.
+- `POST /api/v1/auth/logout` clears the cookie. For production Vercel → Render cross-site requests, configure `COOKIE_SAME_SITE=none`, `NODE_ENV=production`, and the correct `FRONTEND_URL` origin (no trailing path). Requests from the frontend must use `credentials: 'include'`. Browsers blocking third-party cookies may require a same-site custom domain or proxy; changing CORS does not bypass browser policy. Use CSRF protections on sensitive mutations if deploying beyond coursework.
+- Interactive Swagger UI: **`GET /api/docs`**. Machine-readable **OpenAPI 3.0.3**: **`GET /api/v1/openapi.json`**. UI static assets load from jsDelivr CDN; the JSON spec works without them.
+
+## Issue #28: Tests and redirect cache
+
+```bash
+cd backend
+npm ci
+npm test
+npm run test:coverage
+```
+
+`test:coverage` fails unless Node's native *line* coverage across the backend meets **70%** (Node >=20). The test command does not need live Neon: DB model interactions are mocked. The public short link mapping `shortCode → link ID` uses an in-process bounded 30-second TTL cache (max 2,000 items) so repeat requests can skip a separate SELECT. Every real GET still executes an atomic PostgreSQL UPDATE + click-event INSERT and returns an uncached HTTP 302 (`Cache-Control: no-store`), preserving per-visit analytics. If a cached link is deleted or expires, it is rechecked against the database. On distributed Render instances, caches are per process (not shared).

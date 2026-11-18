@@ -41,8 +41,8 @@ test('redirect inserts timestamp and increments total in one transaction', async
   const destination = await Link.resolveAndCount('abc123', { connect: async () => client });
   assert.equal(destination, 'https://example.com/');
   assert.deepEqual(seen.map((call) => call.sql.match(/^\w+/)?.[0]),
-    ['BEGIN', 'SELECT', 'INSERT', 'UPDATE', 'COMMIT', 'RELEASE']);
-  assert.match(seen[2].sql, /link_clicks/);
+    ['BEGIN', 'SELECT', 'UPDATE', 'INSERT', 'COMMIT', 'RELEASE']);
+  assert.match(seen[3].sql, /link_clicks/);
   assert.deepEqual(seen[2].args, [UUID]);
   assert.deepEqual(seen[3].args, [UUID]);
 });
@@ -70,7 +70,8 @@ test('failed click insert rolls back and never increments the total', async () =
     release: () => seen.push('RELEASE')
   };
   await assert.rejects(Link.resolveAndCount('abc123', { connect: async () => client }), /DB write failed/);
-  assert.equal(seen.some((sql) => sql.startsWith('UPDATE')), false);
+  // The UPDATE occurs inside the transaction and is rolled back if INSERT fails.
+  assert.equal(seen.includes('COMMIT'), false);
   assert.equal(seen.at(-2), 'ROLLBACK');
   assert.equal(seen.at(-1), 'RELEASE');
 });

@@ -24,7 +24,7 @@ test('server health, 404 and CORS headers', async () => {
     assert.equal(healthy.headers.get('access-control-allow-origin'), 'http://localhost:5173');
     assert.equal(healthy.headers.get('access-control-allow-credentials'), 'true');
 
-    const missing = await fetch(`${base}/unknown`);
+    const missing = await fetch(`${base}/api/v1/nonexistent`);
     assert.equal(missing.status, 404);
     assert.match((await missing.json()).message, /not found/);
   });
