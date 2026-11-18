@@ -7,12 +7,17 @@ import { authRouter } from './routes/auth.js';
 import { linksRouter } from './routes/links.js';
 import { Link } from './models/Link.js';
 import { allowedCorsOrigins } from './config/cors.js';
+import { parseCookies } from './middleware/cookies.js';
+import { openapi, swaggerHtml } from './docs/openapi.js';
 
 export function createApp({ dbCheck = checkDatabaseConnection } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(cors({ origin: allowedCorsOrigins(env.frontendUrl), credentials: true, optionsSuccessStatus: 204 }));
   app.use(express.json({ limit: '100kb' }));
+  app.use(parseCookies);
+  app.get('/api/v1/openapi.json', (_req, res) => res.set('Cache-Control', 'no-store').json(openapi));
+  app.get('/api/docs', (_req, res) => res.set('Cache-Control', 'no-store').type('html').send(swaggerHtml()));
 
   app.get('/api/v1/health', (_req, res) => {
     res.status(200).json({ status: 'ok', service: 'url-shortener-api' });
@@ -46,7 +51,7 @@ export function createApp({ dbCheck = checkDatabaseConnection } = {}) {
     next();
   });
 
-  // Public short URL redirect: never cache so each visit increments the counter.
+  // Redirect mapping is cached server-side, but responses stay no-store so every GET counts.
   app.get('/:shortCode', async (req, res, next) => {
     try {
       if (!/^[A-Za-z0-9_-]{3,32}$/.test(req.params.shortCode)) return next();

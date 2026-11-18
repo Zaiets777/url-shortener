@@ -13,13 +13,6 @@ function secret() {
   return env.jwtSecret;
 }
 
-export function readCookie(req, name = COOKIE_NAME) {
-  const raw = req.headers.cookie || '';
-  const entry = raw.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`));
-  if (!entry) return null;
-  try { return decodeURIComponent(entry.slice(name.length + 1)); } catch { return null; }
-}
-
 const cookieOptions = () => ({
   httpOnly: true,
   secure: env.nodeEnv === 'production' || env.cookieSameSite === 'none',
@@ -38,7 +31,7 @@ export function clearSession(res) {
 }
 export async function requireAuth(req, _res, next) {
   try {
-    const token = readCookie(req);
+    const token = req.cookies?.[COOKIE_NAME];
     if (!token) throw new AppError(401, 'Authentication required');
     let payload;
     try { payload = jwt.verify(token, secret(), { algorithms: ['HS256'] }); }
